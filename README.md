@@ -2,6 +2,8 @@
 
 Command-line client for vendor and system operations against the ROVI Data Hub API.
 
+Full documentation is available in the MkDocs source under `docs/`.
+
 The CLI lets you:
 - manage vendor API tokens (admin operations),
 - create/renew/delete system JWTs,

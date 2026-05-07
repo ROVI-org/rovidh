@@ -1,0 +1,19 @@
+site_name: ROVI Data Hub Vendor CLI
+site_description: Command-line client for vendor and system operations against the ROVI Data Hub API.
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: readthedocs
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Configuration: configuration.md
+  - Commands: commands.md
+  - Development: development.md
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
