@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -14,6 +15,27 @@ SINGLE_UPLOAD_COMMANDS = [
 
 def upload_module():
     return importlib.import_module("rovidh.upload")
+
+
+def fake_file_sizes(monkeypatch, sizes: dict[Path, int]):
+    original_stat = Path.stat
+
+    class StatProxy:
+        def __init__(self, real, size):
+            self._real = real
+            self.st_size = size
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    def fake_stat(self, *args, **kwargs):
+        result = original_stat(self, *args, **kwargs)
+        for path, size in sizes.items():
+            if self == path:
+                return StatProxy(result, size)
+        return result
+
+    monkeypatch.setattr(Path, "stat", fake_stat)
 
 
 def upload_schema(openapi_spec, endpoint):
@@ -181,4 +203,54 @@ def test_dashboard_upload_rejects_non_json_before_posting(tmp_path, monkeypatch)
 
     assert result.exit_code == 1
     assert "must be a .json file" in result.output
+    assert captured == []
+
+
+def test_upload_rejects_file_larger_than_1gb_before_posting(tmp_path, monkeypatch):
+    oversized = tmp_path / "huge.bin"
+    oversized.write_bytes(b"x")
+    captured = capture_posts(monkeypatch)
+    fake_file_sizes(monkeypatch, {oversized: upload_module().MAX_UPLOAD_BYTES + 1})
+
+    result = CliRunner().invoke(
+        upload_module().upload,
+        ["file", "--system-jwt", "test-jwt", str(oversized)],
+    )
+
+    assert result.exit_code == 1
+    assert "exceeds the 1GB upload limit" in result.output
+    assert "Break the file into smaller pieces" in result.output
+    assert captured == []
+
+
+def test_upload_allows_file_exactly_1gb(tmp_path, monkeypatch):
+    boundary = tmp_path / "boundary.bin"
+    boundary.write_bytes(b"x")
+    captured = capture_posts(monkeypatch)
+    fake_file_sizes(monkeypatch, {boundary: upload_module().MAX_UPLOAD_BYTES})
+
+    result = CliRunner().invoke(
+        upload_module().upload,
+        ["file", "--system-jwt", "test-jwt", str(boundary)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(captured) == 1
+
+
+def test_batch_upload_rejects_oversized_file_before_posting(tmp_path, monkeypatch):
+    small = tmp_path / "ok.json"
+    large = tmp_path / "too-big.json"
+    small.write_text("{}", encoding="utf-8")
+    large.write_text("{}", encoding="utf-8")
+    captured = capture_posts(monkeypatch)
+    fake_file_sizes(monkeypatch, {large: upload_module().MAX_UPLOAD_BYTES + 1})
+
+    result = CliRunner().invoke(
+        upload_module().upload,
+        ["files", "--system-jwt", "test-jwt", str(small), str(large)],
+    )
+
+    assert result.exit_code == 1
+    assert "exceeds the 1GB upload limit" in result.output
     assert captured == []
