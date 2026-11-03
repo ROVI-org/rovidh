@@ -12,6 +12,7 @@ from .api import create_headers, post
 
 JSON_CONTENT_TYPE = "application/json"
 BINARY_CONTENT_TYPE = "application/octet-stream"
+MAX_UPLOAD_BYTES = 1 * 1024**3  # 1 GiB
 
 
 def content_type_for(path: Path, default: str = BINARY_CONTENT_TYPE) -> str:
@@ -21,6 +22,15 @@ def content_type_for(path: Path, default: str = BINARY_CONTENT_TYPE) -> str:
 def validate_extension(path: Path, extension: str) -> None:
     if path.suffix.lower() != extension:
         raise click.ClickException(f"{path} must be a {extension} file")
+
+
+def validate_file_size(path: Path, max_bytes: int = MAX_UPLOAD_BYTES) -> None:
+    size = path.stat().st_size
+    if size > max_bytes:
+        raise click.ClickException(
+            f"{path} is {size:,} bytes, which exceeds the 1GB upload limit. "
+            "Break the file into smaller pieces (each 1GB or less) and upload them separately."
+        )
 
 
 def multipart_headers(rdh_config: RDHUploadConfig, encoder: MultipartEncoder) -> dict:
@@ -39,6 +49,9 @@ def upload_files(
     paths = list(paths)
     if not paths:
         raise click.ClickException("At least one file is required.")
+
+    for path in paths:
+        validate_file_size(path)
 
     with ExitStack() as stack:
         fields = [
